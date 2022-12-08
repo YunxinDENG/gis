@@ -2,7 +2,7 @@
 title: "W3prac"
 author: "DYX"
 date: "2022-12-08"
-output: html_document
+output: github_document
 ---
 
 ```{r setup, include=FALSE}
@@ -102,9 +102,7 @@ AusoutlineSF <- AusoutlineSP %>%
 
 **3.5.2 WorldClim data**
 
-**Data source** :
-5minutes minimum Temperature
-<https://www.worldclim.org/data/worldclim21.html>
+**Data source** : 5minutes minimum Temperature <https://www.worldclim.org/data/worldclim21.html>
 
 ```{r}
 library(raster)
@@ -143,7 +141,7 @@ plot(pr1)
 
 ```
 
-### **3.5.3** Data loading  正式开始分析
+### **3.5.3** Data loading 正式开始分析
 
 search for filenames containing `tif`
 
@@ -320,15 +318,13 @@ plot(Austemp)
 
 specifies an extent box that will cover the whole of Austrilia Outline
 
-get raster data within the outline of the shape
-用vector裁剪raster
+get raster data within the outline of the shape 用vector裁剪raster
 
 ```{r}
 exactAus<-terra::mask(Austemp, Ausoutline)
 ```
 
-re-compute our histogram for Australia in March
-subset using the location
+re-compute our histogram for Australia in March subset using the location
 
 ```{r}
 #subset using the known location of the raster
