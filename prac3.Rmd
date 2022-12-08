@@ -1,0 +1,613 @@
+---
+title: "W3prac"
+author: "DYX"
+date: "2022-12-08"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+**task:** raster data → descriptive statistics **question:** explore gridded temperature in Australia **Data source:** <https://gadm.org/download_country_v3.html>
+
+## 1 load a vector of Australia
+
+load gpkg into R
+
+```{r}
+library(sf)
+library(here)
+st_layers(here("gadm36_AUS.gpkg"))
+```
+
+read in the GeoPackage layer for the whole of Australia (layer ending in 0)
+
+```{r}
+library(sf)
+Ausoutline <- st_read(here("gadm36_AUS.gpkg"), 
+                      layer='gadm36_AUS_0')
+```
+
+**3.5.1.2 WGS84**
+
+check the CRS
+
+```{r}
+print(Ausoutline)
+```
+
+**3.5.1.3 Proj4**
+
+A `proj4` string is a compact way of identifying a coordinate reference system
+
+```{r}
+library(sf)
+st_crs(Ausoutline)$proj4string
+```
+
+**3.5.1.4 EPSG**
+
+```{r}
+Ausoutline <- Ausoutline %>%
+  st_set_crs(., 4326)
+```
+
+```{r}
+#or more concisely
+library(here)
+Ausoutline <- st_read(here("gadm36_AUS.gpkg"), 
+                      layer='gadm36_AUS_0') %>% 
+  st_set_crs(4326)
+```
+
+**3.5.1.5 Reprojecting your spatial data**
+
+```{r}
+AusoutlinePROJECTED <- Ausoutline %>%
+  st_transform(.,3112)
+
+print(AusoutlinePROJECTED) 
+```
+
+```{r}
+#From sf to sp
+AusoutlineSP <- Ausoutline %>%
+  as(., "Spatial")
+
+#From sp to sf
+AusoutlineSF <- AusoutlineSP %>%
+  st_as_sf()
+```
+
+**3.5.2 WorldClim data**
+
+**Data source** :
+5minutes minimum Temperature
+<https://www.worldclim.org/data/worldclim21.html>
+
+```{r}
+library(raster)
+library(terra)
+jan<-terra::rast(here("wc2.1_5m_tmin","wc2.1_5m_tmin_01.tif"))
+# have a look at the raster layer jan
+jan
+```
+
+```{r}
+plot(jan)
+```
+
+using Mollweide projecction
+
+```{r}
+# set the proj 4 to a new object
+
+pr1 <- terra::project(jan, "+proj=moll +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+
+#or....
+
+newproj<-"ESRI:54009"
+# get the jan raster and give it the new proj4
+pr1 <- jan %>%
+  terra::project(., newproj)
+plot(pr1)
+```
+
+back to WGS84 一般用这个就行
+
+```{r}
+pr1 <- pr1 %>%
+  terra::project(., "EPSG:4326")
+plot(pr1)
+
+```
+
+### **3.5.3** Data loading  正式开始分析
+
+search for filenames containing `tif`
+
+```{r}
+library(fs)
+library(tidyverse)
+listfiles<-dir_info("wc2.1_5m_tmin") %>%
+  filter(str_detect(path, ".tif")) %>%
+  dplyr::select(path)%>%
+  pull()
+
+# using pull() from dplyr which is the same as the $ often used to extract columns as in the next stage [column name]
+
+#have a look at the file names 
+listfiles
+```
+
+load all of the data straight into a SpatRaste(collection of raster layers)
+
+```{r}
+worldclimtemp <- listfiles %>%
+  terra::rast()
+  
+#have a look at the raster stack
+worldclimtemp
+```
+
+access single layers
+
+```{r}
+# access the january layer
+worldclimtemp[[1]]
+```
+
+rename our layers within the stack
+
+```{r}
+month <- c("Jan", "Feb", "Mar", "Apr", "May", "Jun", 
+           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+names(worldclimtemp) <- month
+```
+
+get data for just January ,
+
+change layername to worldlimtemp
+
+```{r}
+worldclimtemp$Jan
+```
+
+**3.5.4 Raster location**
+
+```{r}
+site <- c("Brisbane", "Melbourne", "Perth", "Sydney", "Broome", "Darwin", "Orange", 
+          "Bunbury", "Cairns", "Adelaide", "Gold Coast", "Canberra", "Newcastle", 
+          "Wollongong", "Logan City" )
+lon <- c(153.03, 144.96, 115.86, 151.21, 122.23, 130.84, 149.10, 115.64, 145.77, 
+         138.6, 153.43, 149.13, 151.78, 150.89, 153.12)
+lat <- c(-27.47, -37.91, -31.95, -33.87, 17.96, -12.46, -33.28, -33.33, -16.92, 
+         -34.93, -28, -35.28, -32.93, -34.42, -27.64)
+#Put all of this inforamtion into one list 
+samples <- data.frame(site, lon, lat, row.names="site")
+# Extract the data from the Rasterstack for all points 
+AUcitytemp<- terra::extract(worldclimtemp, samples)
+```
+
+1.  Add the city names to the rows of AUcitytemp
+
+```{r}
+Aucitytemp2 <- AUcitytemp %>% 
+  as_tibble()%>% 
+  add_column(Site = site, .before = "Jan")
+```
+
+**3.6 Part 2 descriptive statistics**
+
+subset our data using target city name(row name)
+
+```{r}
+Perthtemp <- Aucitytemp2 %>%
+  filter(site=="Perth")
+```
+
+把位置为第三行的perth改名为perthtemp
+
+```{r}
+Perthtemp <- Aucitytemp2[3,]
+```
+
+### **3.6.2** Histogram
+
+```{r}
+hist(as.numeric(Perthtemp))
+```
+
+下面是提升图表美观的操作
+
+```{r}
+library(tidyverse)
+#define where you want the breaks in the historgram
+userbreak<-c(8,10,12,14,16,18,20,22,24,26)
+
+# remove the ID and site columns
+Perthtemp <- Aucitytemp2 %>%
+  filter(site=="Perth")
+
+t<-Perthtemp %>%
+ dplyr::select(Jan:Dec)
+
+  hist((as.numeric(t)), 
+     breaks=userbreak, 
+     col="red", 
+     main="Histogram of Perth Temperature", 
+     xlab="Temperature", 
+     ylab="Frequency")
+```
+
+Check out the histogram information R generated
+
+```{r}
+histinfo <- as.numeric(t) %>%
+  as.numeric()%>%
+  hist(.)
+```
+
+```{r}
+histinfo
+```
+
+-   breaks --- the cut off points for the bins (or bars), we just specified these
+
+-   counts --- the number of cells in each bin
+
+-   midpoints --- the middle value for each bin
+
+-   density --- the density of data per bin
+
+**3.6.3 Using more data**
+
+```{r}
+plot(Ausoutline$geom)
+```
+
+as the `.shp` is quite complex (i.e. lots of points) we can simplify it first with the `st_simplify()`
+
+```{r}
+AusoutSIMPLE <- Ausoutline %>%
+  st_simplify(., dTolerance = 1000) %>%
+  st_geometry()%>%
+  plot()
+```
+
+make sure that both of our layers are in the same coordinate reference system when we combine them
+
+```{r}
+print(Ausoutline)
+```
+
+```{r}
+crs(worldclimtemp)
+```
+
+set our map extent (where we want to clip the data to) to the outline of Australia then crop our WorldClim dataset to it.
+
+```{r}
+Austemp <- Ausoutline %>%
+  # now crop our temp data to the extent
+  terra::crop(worldclimtemp,.)
+
+# plot the output
+plot(Austemp)
+```
+
+specifies an extent box that will cover the whole of Austrilia Outline
+
+get raster data within the outline of the shape
+用vector裁剪raster
+
+```{r}
+exactAus<-terra::mask(Austemp, Ausoutline)
+```
+
+re-compute our histogram for Australia in March
+subset using the location
+
+```{r}
+#subset using the known location of the raster
+hist(exactAus[[3]], col="red", main ="March temperature")
+```
+
+**3.6.4 Histogram with ggplot**
+
+make our raster into a data.frame to be compatible with `ggplot2`
+
+```{r}
+exactAusdf <- exactAus %>%
+  as.data.frame()
+```
+
+```{r}
+library(ggplot2)
+# set up the basic histogram
+gghist <- ggplot(exactAusdf, 
+                 aes(x=Mar)) + 
+  geom_histogram(color="black", 
+                 fill="white")+
+  labs(title="Ggplot2 histogram of Australian March temperatures", 
+       x="Temperature", 
+       y="Frequency")
+# add a vertical line to the hisogram showing mean tempearture
+gghist + geom_vline(aes(xintercept=mean(Mar, 
+                                        na.rm=TRUE)),
+            color="blue", 
+            linetype="dashed", 
+            size=1)+
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+**plotting multiple months of temperature data on the same histogram**
+
+`pivot_longer():`put our variable (months) into a one column
+
+```{r}
+squishdata<-exactAusdf%>%
+  pivot_longer(
+  cols = 1:12,
+  names_to = "Month",
+  values_to = "Temp"
+)
+```
+
+**subset the data, selecting two months**
+
+```{r}
+twomonths <- squishdata %>%
+  # | = OR
+  filter(., Month=="Jan" | Month=="Jun")
+```
+
+**Get the mean for each month we selected**
+
+```{r}
+meantwomonths <- twomonths %>%
+  group_by(Month) %>%
+  summarise(mean=mean(Temp, na.rm=TRUE))
+
+meantwomonths
+```
+
+set colour and fill for each variable
+
+```{r}
+ggplot(twomonths, aes(x=Temp, color=Month, fill=Month)) +
+  geom_histogram(position="identity", alpha=0.5)+
+  geom_vline(data=meantwomonths, 
+             aes(xintercept=mean, 
+                 color=Month),
+             linetype="dashed")+
+  labs(title="Ggplot2 histogram of Australian Jan and Jun
+       temperatures",
+       x="Temperature",
+       y="Frequency")+
+  theme_classic()+
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+dropped all the NAs with `drop_na()`
+
+selected a bin width of 5 and produced a faceted plot...
+
+```{r}
+data_complete_cases <- squishdata %>%
+  drop_na()%>% 
+  mutate(Month = factor(Month, levels = c("Jan","Feb","Mar",
+                                          "Apr","May","Jun",
+                                          "Jul","Aug","Sep",
+                                          "Oct","Nov","Dec")))
+
+# Plot faceted histogram
+ggplot(data_complete_cases, aes(x=Temp, na.rm=TRUE))+
+  geom_histogram(color="black", binwidth = 5)+
+  labs(title="Ggplot2 faceted histogram of Australian temperatures", 
+       x="Temperature",
+       y="Frequency")+
+  facet_grid(Month ~ .)+
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+create an interactive histogram using `plotly`
+
+```{r}
+library(plotly)
+# split the data for plotly based on month
+```
+
+```{r}
+jan <- squishdata %>%
+  drop_na() %>%
+  filter(., Month=="Jan")
+
+jun <- squishdata %>%
+  drop_na() %>%
+  filter(., Month=="Jun")
+
+# give axis titles
+x <- list (title = "Temperature")
+y <- list (title = "Frequency")
+
+# set the bin width
+xbinsno<-list(start=0, end=40, size = 2.5)
+
+# plot the histogram calling all the variables we just set
+ihist<-plot_ly(alpha = 0.6) %>%
+        add_histogram(x = jan$Temp,
+        xbins=xbinsno, name="January") %>%
+        add_histogram(x = jun$Temp,
+        xbins=xbinsno, name="June") %>% 
+        layout(barmode = "overlay", xaxis=x, yaxis=y)
+
+ihist
+```
+
+**other descrptive statistics**
+
+```{r}
+# mean per month
+meanofall <- squishdata %>%
+  group_by(Month) %>%
+  summarise(mean = mean(Temp, na.rm=TRUE))
+
+# print the top 1
+head(meanofall, n=1)
+```
+
+```{r}
+# standard deviation per month
+sdofall <- squishdata %>%
+  group_by(Month) %>%
+  summarize(sd = sd(Temp, na.rm=TRUE))
+
+# maximum per month
+maxofall <- squishdata %>%
+  group_by(Month) %>%
+  summarize(max = max(Temp, na.rm=TRUE))
+
+# minimum per month
+minofall <- squishdata %>%
+  group_by(Month) %>%
+  summarize(min = min(Temp, na.rm=TRUE))
+
+# Interquartlie range per month
+IQRofall <- squishdata %>%
+  group_by(Month) %>%
+  summarize(IQR = IQR(Temp, na.rm=TRUE))
+
+# perhaps you want to store multiple outputs in one list..
+lotsofstats <- squishdata %>%
+  group_by(Month) %>%
+  summarize(IQR = IQR(Temp, na.rm=TRUE), 
+            max=max(Temp, na.rm=T))
+
+# or you want to know the mean (or some other stat) 
+#for the whole year as opposed to each month...
+
+meanwholeyear=squishdata %>%
+  summarize(meanyear = mean(Temp, na.rm=TRUE))
+```
+
+```{bash}
+git add . 
+git commit -m "commit comment" 
+git push
+```
+
+```{r}
+library(usethis)
+use_github()
+```
+
+```{bash}
+git remote -v
+## output
+
+origin  https://github.com/YunxinDENG/gis.git (fetch)
+origin  https://github.com/YunxinDENG/gis.git (push)
+```
+
+```{bash}
+git config --list
+```
+
+```{bash}
+git config --global user.name "YunxinDENG"
+git config --global user.email "ucfnyde@ucl.ac.uk"
+```
+
+```{bash}
+# 初始化git仓库
+git init
+# 全部写入暂存区
+git add .
+# 将暂存区内容添加到本地仓库
+git commit -m "first commit"
+# 关联远程仓库
+git remote add origin https://github.com/YunxinDENG/GIS.git
+# 提交到远程仓库
+git push -u origin master
+```
+
+```{bash}
+git remote -v
+## output
+```
+
+```{bash}
+git branch -vv
+
+```
+
+```{bash}
+git branch -M main
+git push -u origin main
+```
+
+```{bash}
+git push --set-upstream origin main
+```
+
+```{bash}
+git config --global --unset http.proxy
+git config --global --unset https.proxy
+```
+
+```{bash}
+git branch -M main
+
+git push -u origin main
+```
+
+```{bash}
+git add .
+git commit -m "commit comment"
+git push
+```
+
+git help config
+
+```{bash}
+ git push --set-upstream origin main
+```
+
+```{bash}
+git remote set-url origin https://github.com/YunxinDENG/gis
+git add . -A
+git commit -m "Initial commit"
+git remote add origin https://github.com/YunxinDENG/gis
+git push -u origin master
+```
+
+```{bash}
+git status
+```
+
+```{bash}
+git add
+```
